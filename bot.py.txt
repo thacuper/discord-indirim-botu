@@ -1,0 +1,82 @@
+import discord
+import requests
+import asyncio
+from datetime import datetime, time, timedelta
+
+TOKEN = "MTQwNDI2MzQ2NjE4NDk5OTA0Mw.GDt7UW.3lgrvYkBoU-M8cOkzYuPUivlUG4ttdLS5PXw30"
+KANAL_ID = 123456789012345678
+
+intents = discord.Intents.default()
+client = discord.Client(intents=intents)
+
+async def steam_ve_epic_indirimleri():
+    kanal = client.get_channel(KANAL_ID)
+    if kanal is None:
+        print("⚠ Kanal bulunamadı! ID yanlış olabilir veya botun erişimi yok.")
+        return
+
+    mesajlar = []
+
+    # --- STEAM İNDİRİMLERİ ---
+    try:
+        steam_url = "https://store.steampowered.com/api/featuredcategories"
+        steam_veri = requests.get(steam_url).json()
+        for oyun in steam_veri.get("specials", {}).get("items", []):
+            if oyun.get("discount_percent", 0) >= 40:
+                mesajlar.append(
+                    f"**[STEAM]** {oyun['name']} - %{oyun['discount_percent']} indirim\n"
+                    f"Fiyat: {oyun['final_price']/100:.2f} TL\n{oyun['url']}"
+                )
+    except Exception as e:
+        mesajlar.append(f"Steam verisi alınamadı: {e}")
+
+    # --- EPIC GAMES İNDİRİMLERİ ---
+    try:
+        epic_url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
+        epic_veri = requests.get(epic_url).json()
+
+        for oyun in epic_veri.get("data", {}).get("Catalog", {}).get("searchStore", {}).get("elements", []):
+            price_info = oyun.get("price", {}).get("totalPrice", {})
+            discount_pct = price_info.get("discountPercentage", 0)
+            if discount_pct >= 40:
+                url = f"https://store.epicgames.com/p/{oyun['catalogNs']['mappings'][0]['pageSlug']}"
+                mesajlar.append(
+                    f"**[EPIC]** {oyun['title']} - %{discount_pct} indirim\n"
+                    f"Fiyat: {price_info.get('fmtPrice', {}).get('discountPrice', 'Bilinmiyor')}\n{url}"
+                )
+    except Exception as e:
+        mesajlar.append(f"Epic verisi alınamadı: {e}")
+
+    # Mesaj gönder
+    if not mesajlar:
+        await kanal.send("Şu an %40 ve üstü indirim bulunamadı.")
+    else:
+        await kanal.send("\n\n".join(mesajlar))
+
+async def gunde_bir_gonder():
+    await client.wait_until_ready()
+    kanal = client.get_channel(KANAL_ID)
+
+    while not client.is_closed():
+        now = datetime.now()
+        hedef_saat = time(12, 0)  # Saat 12:00
+        hedef_zaman = datetime.combine(now.date(), hedef_saat)
+
+        if now > hedef_zaman:
+            hedef_zaman += timedelta(days=1)
+
+        bekleme_suresi = (hedef_zaman - now).total_seconds()
+        print(f"Sonraki gönderim {hedef_zaman} - {bekleme_suresi/60:.1f} dakika kaldı")
+        await asyncio.sleep(bekleme_suresi)
+
+        await steam_ve_epic_indirimleri()
+
+@client.event
+async def on_ready():
+    print(f"{client.user} olarak giriş yapıldı!")
+    kanal = client.get_channel(KANAL_ID)
+    if kanal:
+        await kanal.send("Bot çalışmaya başladı! 🎮 Her gün 12:00'de indirimler gelecek.")
+    client.loop.create_task(gunde_bir_gonder())
+
+client.run(TOKEN)
